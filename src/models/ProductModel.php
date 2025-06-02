@@ -7,6 +7,7 @@ class ProductModel {
     }
 
     public function createProduct($data) {
+        // Pastikan nama tabel 'product' sudah benar
         $sql = "INSERT INTO product (name, description, price, quantity, unit) VALUES (?, ?, ?, ?, ?)";
 
         $stmt = $this->conn->prepare($sql);
@@ -37,7 +38,8 @@ class ProductModel {
 
     public function getAllProducts() {
         $products = [];
-        $sql = "SELECT product_id, name, description, price, quantity, unit FROM product";
+        // Pastikan nama tabel 'product' sudah benar
+        $sql = "SELECT product_id, name, description, price, quantity, unit FROM product ORDER BY name ASC";
         
         $result = $this->conn->query($sql);
         if ($result) {
@@ -52,6 +54,7 @@ class ProductModel {
     }
 
     public function getProductById($product_id) {
+        // Pastikan nama tabel 'product' sudah benar
         $sql = "SELECT product_id, name, description, price, quantity, unit FROM product WHERE product_id = ? LIMIT 1";
 
         $stmt = $this->conn->prepare($sql);
@@ -63,9 +66,9 @@ class ProductModel {
         
         if ($stmt->execute()) {
             $result = $stmt->get_result();
-            $product = $result->fetch_assoc();
+            $product = $result->fetch_assoc(); // Akan null jika tidak ditemukan
             $stmt->close();
-            return $product; // Akan null jika tidak ditemukan
+            return $product; 
         } else {
             error_log("ProductModel - getById Execute failed: (" . $stmt->errno . ") " . $stmt->error);
             $stmt->close();
@@ -74,11 +77,10 @@ class ProductModel {
     }
 
     public function updateProduct($product_id, $data) {
-        $sql = "
-            UPDATE product
-            SET name = ?, description = ?, price = ?, quantity = ?, unit = ?
-            WHERE product_id = ?;
-        ";
+        // Pastikan nama tabel 'product' sudah benar
+        $sql = "UPDATE product
+                SET name = ?, description = ?, price = ?, quantity = ?, unit = ?
+                WHERE product_id = ?;";
 
         $stmt = $this->conn->prepare($sql);
         if (!$stmt) {
@@ -87,7 +89,7 @@ class ProductModel {
         }
         
         $stmt->bind_param(
-            "ssiisi", // s(name), s(description), i(price), i(quantity), s(unit), i(product_id)
+            "ssiisi", 
             $data['name'],
             $data['description'],
             $data['price'],
@@ -97,7 +99,7 @@ class ProductModel {
         );
 
         if ($stmt->execute()) {
-            $success = $stmt->affected_rows >= 0;
+            $success = $stmt->affected_rows >= 0; 
             $stmt->close();
             return $success;
         } else {
@@ -108,7 +110,7 @@ class ProductModel {
     }
 
     public function deleteProduct($product_id) {
-
+        // Pastikan nama tabel 'product' sudah benar
         $sql = "DELETE FROM product WHERE product_id = ?";
 
         $stmt = $this->conn->prepare($sql);
@@ -125,7 +127,53 @@ class ProductModel {
             return $success;
         } else {
             error_log("ProductModel - Delete Execute failed: (" . $stmt->errno . ") " . $stmt->error);
-            // Error bisa terjadi karena foreign key constraint jika produk masih digunakan
+            $stmt->close();
+            return false;
+        }
+    }
+
+    /**
+     * Mengurangi stok produk.
+     * @param int $product_id ID produk.
+     * @param int $quantity_to_decrease Jumlah yang akan dikurangi.
+     * @return bool True jika berhasil, false jika gagal (mis: stok tidak cukup, produk tidak ada).
+     */
+    public function decreaseProductStock($product_id, $quantity_to_decrease) {
+        $product = $this->getProductById($product_id); 
+        if (!$product) {
+            error_log("ProductModel - decreaseProductStock: Produk ID {$product_id} tidak ditemukan.");
+            return false; 
+        }
+
+        if (!isset($product['quantity'])) {
+             error_log("ProductModel - decreaseProductStock: Kuantitas tidak ditemukan untuk Produk ID {$product_id}.");
+             return false;
+        }
+
+        if ($product['quantity'] < $quantity_to_decrease) {
+            error_log("ProductModel - decreaseProductStock: Stok tidak mencukupi untuk Produk ID {$product_id}. Tersedia: {$product['quantity']}, Diminta: {$quantity_to_decrease}");
+            return false; 
+        }
+
+        // Pastikan nama tabel 'product' sudah benar
+        $sql = "UPDATE product SET quantity = quantity - ? WHERE product_id = ?";
+        $stmt = $this->conn->prepare($sql);
+        if (!$stmt) {
+            error_log("ProductModel - decreaseProductStock Prepare failed: (" . $this->conn->errno . ") " . $this->conn->error);
+            return false;
+        }
+        
+        $stmt->bind_param("ii", $quantity_to_decrease, $product_id);
+
+        if ($stmt->execute()) {
+            $success = $stmt->affected_rows >= 0; 
+            if ($quantity_to_decrease > 0) { 
+                $success = $stmt->affected_rows > 0;
+            }
+            $stmt->close();
+            return $success;
+        } else {
+            error_log("ProductModel - decreaseProductStock Execute failed: (" . $stmt->errno . ") " . $stmt->error);
             $stmt->close();
             return false;
         }
